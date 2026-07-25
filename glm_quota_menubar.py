@@ -5,8 +5,8 @@ AI Quota — macOS menu bar monitor for GLM + DeepSeek.
 GLM:  5h quota, MCP quota, daily token consumption
 DeepSeek: account balance (daily usage requires platform login, not API key)
 
-Refreshes every 5 minutes. Network calls run on a background thread so the
-menu bar never blocks on a slow API response.
+Refreshes every 2 minutes, 08:00–23:00 (skipped overnight). Network calls
+run on a background thread so the menu bar never blocks on a slow response.
 """
 
 import json
@@ -23,6 +23,8 @@ import rumps
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
+
+__version__ = "1.1.0"
 
 SECRETS_FILE = Path.home() / ".config" / "zsh" / "ai-secrets.env"
 REFRESH_MINUTES = 2
@@ -114,14 +116,11 @@ def _fmt_tokens(n: int) -> str:
     return str(n)
 
 
-def _fmt_balance(v: float) -> str:
-    """For menu bar title: emoji + integer."""
-    return f"\U0001f4b0{int(v)}"
-
-
-def _fmt_amount(v: float) -> str:
-    """For dropdown: integer only (emoji is in the label)."""
-    return str(int(v))
+def _fmt_money(v: float, decimals: int = 0) -> str:
+    """Format a money value: title passes decimals=0, dropdown passes 2."""
+    if decimals <= 0:
+        return str(int(v))
+    return f"{v:.{decimals}f}"
 
 
 def _icon(pct: float) -> str:
@@ -218,6 +217,7 @@ class AIQuotaApp(rumps.App):
         self._updated: datetime | None = None
         self._fetch_failed = False
         self._pending: tuple | None = None
+        self._fetch_seq = 0
         # polls _pending every 0.5s on the main thread — worker thread cannot
         # create rumps.Timer, because it schedules on the current run-loop,
         # and a daemon thread has none.
@@ -240,14 +240,18 @@ class AIQuotaApp(rumps.App):
     # ---- fetch ----
     # urllib is synchronous; calling it on the rumps Timer / menu callback
     # thread would freeze the menu bar for up to the request timeout. So the
-    # requests run on a worker thread. The worker only writes self._pending;
-    # self._apply_timer (created on the main thread in __init__) polls that
-    # flag every 0.5s and hands results to _rebuild on the main thread.
+    # requests run on a worker thread. The worker only writes self._pending,
+    # and only if its sequence number is still the latest — so a slow, stale
+    # request can never overwrite a fresher one. self._apply_timer (created on
+    # the main thread in __init__) polls _pending every 0.5s and hands results
+    # to _rebuild on the main thread.
 
     def _do_fetch(self, _sender=None):
-        threading.Thread(target=self._fetch_worker, daemon=True).start()
+        self._fetch_seq += 1
+        seq = self._fetch_seq
+        threading.Thread(target=self._fetch_worker, args=(seq,), daemon=True).start()
 
-    def _fetch_worker(self):
+    def _fetch_worker(self, seq: int):
         gt = self._secrets.get("glm")
         dt = self._secrets.get("deepseek")
         glm_new = self._glm
@@ -270,6 +274,9 @@ class AIQuotaApp(rumps.App):
             else:
                 ds_new = DSState.from_api(balance)
 
+        # a newer fetch was triggered while this one was in flight — drop it
+        if seq != self._fetch_seq:
+            return
         self._pending = (glm_new, ds_new, failed)
 
     def _apply_fetch(self, _sender=None):
@@ -283,6 +290,17 @@ class AIQuotaApp(rumps.App):
         self._updated = datetime.now()
         self._rebuild()
 
+    def _reload_secrets(self, _sender=None):
+        # re-read the secrets file without restarting the app
+        self._secrets = load_secrets()
+        self._do_fetch()
+
+    def _about(self, _sender=None):
+        rumps.alert(
+            title="AI Quota MenuBar",
+            message=f"版本 {__version__}\nGLM + DeepSeek 配额监控",
+        )
+
     # ---- dummy callback ----
     # All informational menu items use this no-op callback so NSMenuItem
     # renders them with the same text attributes as Refresh / Quit.
@@ -291,6 +309,27 @@ class AIQuotaApp(rumps.App):
         pass
 
     # ---- menu ----
+
+    def _add_footer(self):
+        nop = self._nop
+        self.menu.add(rumps.separator)
+        if self._fetch_failed:
+            self.menu.add(rumps.MenuItem(
+                "⚠️ 上次刷新部分失败,显示为最近一次成功值", callback=nop
+            ))
+        if self._updated:
+            ts = self._updated.strftime("%H:%M:%S")
+            self.menu.add(rumps.MenuItem(f"\U0001f552 Updated: {ts}", callback=nop))
+        self.menu.add(rumps.MenuItem(
+            "\U0001f504 Refresh", callback=self._do_fetch
+        ))
+        self.menu.add(rumps.MenuItem(
+            "\U0001f511 Reload tokens", callback=self._reload_secrets
+        ))
+        self.menu.add(rumps.MenuItem("ℹ️ About", callback=self._about))
+        self.menu.add(rumps.MenuItem(
+            "\U0001f6aa Quit", callback=lambda _: rumps.quit_application()
+        ))
 
     def _rebuild(self):
         self.menu.clear()
@@ -306,13 +345,7 @@ class AIQuotaApp(rumps.App):
             self.menu.add(rumps.MenuItem(
                 f"  请配置 {SECRETS_FILE}", callback=nop
             ))
-            self.menu.add(rumps.separator)
-            self.menu.add(rumps.MenuItem(
-                "\U0001f504 Refresh", callback=self._do_fetch
-            ))
-            self.menu.add(rumps.MenuItem(
-                "\U0001f6aa Quit", callback=lambda _: rumps.quit_application()
-            ))
+            self._add_footer()
             return
 
         # -- title --
@@ -320,7 +353,7 @@ class AIQuotaApp(rumps.App):
         if self._glm.ok:
             parts.append(f"GLM{_icon(self._glm.q_5h)}{self._glm.q_5h:.0f}%")
         if self._ds.ok:
-            parts.append(f"DS{_fmt_balance(self._ds.balance)}")
+            parts.append(f"DS\U0001f4b0{_fmt_money(self._ds.balance)}")
         self.title = " | ".join(parts) if parts else "AI"
 
         # -- GLM --
@@ -371,7 +404,7 @@ class AIQuotaApp(rumps.App):
                 f"\U0001f4e1 DeepSeek", callback=nop
             ))
             self.menu.add(rumps.MenuItem(
-                f"  \U0001f4b0 Balance: {_fmt_amount(self._ds.balance)} {self._ds.currency}",
+                f"  \U0001f4b0 Balance: {_fmt_money(self._ds.balance, 2)} {self._ds.currency}",
                 callback=nop,
             ))
         elif has_ds:
@@ -381,20 +414,7 @@ class AIQuotaApp(rumps.App):
         # no deepseek token configured -> omit the section entirely
 
         # -- footer --
-        self.menu.add(rumps.separator)
-        if self._fetch_failed:
-            self.menu.add(rumps.MenuItem(
-                "⚠️ 上次刷新部分失败,显示为最近一次成功值", callback=nop
-            ))
-        if self._updated:
-            ts = self._updated.strftime("%H:%M:%S")
-            self.menu.add(rumps.MenuItem(f"\U0001f552 Updated: {ts}", callback=nop))
-        self.menu.add(rumps.MenuItem(
-            "\U0001f504 Refresh", callback=self._do_fetch
-        ))
-        self.menu.add(rumps.MenuItem(
-            "\U0001f6aa Quit", callback=lambda _: rumps.quit_application()
-        ))
+        self._add_footer()
 
 
 def main():

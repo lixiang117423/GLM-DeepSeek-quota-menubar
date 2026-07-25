@@ -295,12 +295,6 @@ class AIQuotaApp(rumps.App):
         self._secrets = load_secrets()
         self._do_fetch()
 
-    def _about(self, _sender=None):
-        rumps.alert(
-            title="AI Quota MenuBar",
-            message=f"版本 {__version__}\nGLM + DeepSeek 配额监控",
-        )
-
     # ---- dummy callback ----
     # All informational menu items use this no-op callback so NSMenuItem
     # renders them with the same text attributes as Refresh / Quit.
@@ -326,7 +320,6 @@ class AIQuotaApp(rumps.App):
         self.menu.add(rumps.MenuItem(
             "\U0001f511 Reload tokens", callback=self._reload_secrets
         ))
-        self.menu.add(rumps.MenuItem("ℹ️ About", callback=self._about))
         self.menu.add(rumps.MenuItem(
             "\U0001f6aa Quit", callback=lambda _: rumps.quit_application()
         ))

@@ -218,13 +218,17 @@ class AIQuotaApp(rumps.App):
         self._updated: datetime | None = None
         self._fetch_failed = False
         self._pending: tuple | None = None
-        self._apply_timer: rumps.Timer | None = None
+        # polls _pending every 0.5s on the main thread — worker thread cannot
+        # create rumps.Timer, because it schedules on the current run-loop,
+        # and a daemon thread has none.
+        self._apply_timer = rumps.Timer(self._apply_fetch, 0.5)
 
         self._timer = rumps.Timer(self._on_timer, interval=REFRESH_MINUTES * 60)
 
     def run(self, **kwargs):
         self._do_fetch()
         self._timer.start()
+        self._apply_timer.start()
         super().run(**kwargs)
 
     def _on_timer(self, _sender=None):
@@ -236,8 +240,9 @@ class AIQuotaApp(rumps.App):
     # ---- fetch ----
     # urllib is synchronous; calling it on the rumps Timer / menu callback
     # thread would freeze the menu bar for up to the request timeout. So the
-    # requests run on a worker thread, and results hop back to the main thread
-    # via a one-shot rumps.Timer — NSUI may only be touched from the main thread.
+    # requests run on a worker thread. The worker only writes self._pending;
+    # self._apply_timer (created on the main thread in __init__) polls that
+    # flag every 0.5s and hands results to _rebuild on the main thread.
 
     def _do_fetch(self, _sender=None):
         threading.Thread(target=self._fetch_worker, daemon=True).start()
@@ -266,13 +271,8 @@ class AIQuotaApp(rumps.App):
                 ds_new = DSState.from_api(balance)
 
         self._pending = (glm_new, ds_new, failed)
-        self._apply_timer = rumps.Timer(self._apply_fetch, 0.01)
-        self._apply_timer.start()
 
     def _apply_fetch(self, _sender=None):
-        if self._apply_timer is not None:
-            self._apply_timer.stop()
-            self._apply_timer = None
         if self._pending is None:
             return
         glm_new, ds_new, failed = self._pending

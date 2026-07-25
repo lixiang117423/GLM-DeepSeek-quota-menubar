@@ -25,7 +25,7 @@ import rumps
 # ---------------------------------------------------------------------------
 
 SECRETS_FILE = Path.home() / ".config" / "zsh" / "ai-secrets.env"
-REFRESH_MINUTES = 5
+REFRESH_MINUTES = 2
 GLM_BASE = "https://open.bigmodel.cn"
 DEEPSEEK_API = "https://api.deepseek.com"
 

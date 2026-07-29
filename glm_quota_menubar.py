@@ -341,13 +341,18 @@ class AIQuotaApp(rumps.App):
             self._add_footer()
             return
 
-        # -- title --
-        parts = []
+        # -- title (GLM only; DeepSeek in dropdown) --
         if self._glm.ok:
-            parts.append(f"GLM{_icon(self._glm.q_5h)}{self._glm.q_5h:.0f}%")
-        if self._ds.ok:
-            parts.append(f"DS\U0001f4b0{_fmt_money(self._ds.balance)}")
-        self.title = " | ".join(parts) if parts else "AI"
+            self.title = f"GLM{_icon(self._glm.q_5h)}{self._glm.q_5h:.0f}%"
+        else:
+            self.title = "AI"
+        # 如果需要恢复 DS 到标题,取消下面注释并注释上面 4 行:
+        # parts = []
+        # if self._glm.ok:
+        #     parts.append(f"GLM{_icon(self._glm.q_5h)}{self._glm.q_5h:.0f}%")
+        # if self._ds.ok:
+        #     parts.append(f"DS\U0001f4b0{_fmt_money(self._ds.balance)}")
+        # self.title = " | ".join(parts) if parts else "AI"
 
         # -- GLM --
         if self._glm.ok:

@@ -1,37 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  Template: __BINARY__ is replaced by run.sh --install with the absolute path
-  to the compiled Swift binary (launchd does not expand ~ or $VAR).
--->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>com.lixiang.glm-quota-menubar</string>
-
     <key>ProgramArguments</key>
     <array>
         <string>__BINARY__</string>
     </array>
-
     <key>RunAtLoad</key>
     <true/>
-
-    <!-- Restart only on a crash (non-zero / abnormal exit). Quitting from the
-         menu is a clean exit, so launchd will NOT relaunch it. -->
+    <!-- Restart only on a crash. Quitting from the menu is a clean exit,
+         so launchd will NOT relaunch it. -->
     <key>KeepAlive</key>
     <dict>
         <key>SuccessfulExit</key>
         <false/>
     </dict>
-
     <key>LimitLoadToSessionType</key>
     <string>Aqua</string>
-
     <key>StandardOutPath</key>
-    <string>/tmp/glm-quota-menubar.log</string>
-
+    <string>__LOG__</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/glm-quota-menubar.log</string>
+    <string>__LOG__</string>
 </dict>
 </plist>

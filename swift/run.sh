@@ -1,46 +1,44 @@
 #!/bin/bash
 # GLM Quota MenuBar (Swift) — launch / install / uninstall
 #   ./run.sh             手动启动(后台)
-#   ./run.sh --install   安装 launchd 开机自启(自动把本机绝对路径写入 plist)
+#   ./run.sh --install   安装 launchd 开机自启
 #   ./run.sh --uninstall 移除 launchd 开机自启
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SWIFT_DIR="$SCRIPT_DIR/swift"
-BINARY="$SWIFT_DIR/.build/glm-quota-menubar"
+BINARY="$SCRIPT_DIR/.build/glm-quota-menubar"
 PLIST_NAME="com.lixiang.glm-quota-menubar.plist"
 PLIST_SRC="$SCRIPT_DIR/$PLIST_NAME"
 PLIST_DST="$HOME/Library/LaunchAgents/$PLIST_NAME"
 
-# 编译 Swift 二进制(spm 在当前 macOS beta 上有问题,直接用 swiftc)
-build() {
+# Build if needed (uses swiftc directly because SPM is broken on this macOS beta)
+if [ ! -f "$BINARY" ]; then
     echo "Building GlmQuotaMenubar..."
-    mkdir -p "$SWIFT_DIR/.build"
-    swiftc -framework AppKit -o "$BINARY" "$SWIFT_DIR"/Sources/GlmQuotaMenubar/*.swift
-}
+    mkdir -p "$SCRIPT_DIR/.build"
+    swiftc -framework AppKit -o "$BINARY" "$SCRIPT_DIR"/Sources/GlmQuotaMenubar/*.swift
+fi
 
 case "${1:-}" in
   --install)
-    [ -f "$BINARY" ] || build
     mkdir -p "$HOME/Library/LaunchAgents"
-    # plist 是模板,占位符替换为本机实际绝对路径——launchd 不展开 ~ 和环境变量
-    sed -e "s|__BINARY__|$BINARY|g" "$PLIST_SRC" > "$PLIST_DST"
+    sed -e "s|__BINARY__|$BINARY|g" \
+        -e "s|__LOG__|/tmp/glm-quota-menubar.log|g" \
+        "$PLIST_SRC" > "$PLIST_DST"
     launchctl bootout "gui/$(id -u)/$PLIST_NAME" 2>/dev/null || true
     # bootout 异步释放 label,立刻 bootstrap 会报 "Input/output error"
     sleep 2
     launchctl bootstrap "gui/$(id -u)" "$PLIST_DST"
-    echo "✅ 已安装 launchd 开机自启"
+    echo "✅ Installed launchd auto-start"
     echo "   binary: $BINARY"
     launchctl list | grep glm-quota-menubar
     ;;
   --uninstall)
     launchctl bootout "gui/$(id -u)/$PLIST_NAME" 2>/dev/null || true
     rm -f "$PLIST_DST"
-    echo "✅ 已移除 launchd 开机自启"
+    echo "✅ Removed launchd auto-start"
     ;;
   *)
-    [ -f "$BINARY" ] || build
     cd "$SCRIPT_DIR"
     nohup "$BINARY" > /tmp/glm-quota-menubar.log 2>&1 &
     echo "GLM Quota MenuBar started (PID $!)"

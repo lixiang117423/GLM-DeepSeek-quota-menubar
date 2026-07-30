@@ -69,9 +69,13 @@ class MenuBarController {
             return
         }
 
-        // Title bar — GLM only (DeepSeek hidden from title as in Python version)
+        // Title bar — GLM 5h quota, plus weekly quota when present (Pro plan).
         if glmState.ok {
-            statusItem.button?.title = "GLM\(icon(for: glmState.q5h))\(Int(glmState.q5h))%"
+            var title = "GLM\(icon(for: glmState.q5h))\(Int(glmState.q5h))%"
+            if !glmState.rWeekly.isEmpty {
+                title += " | \(icon(for: glmState.qWeekly))\(Int(glmState.qWeekly))%"
+            }
+            statusItem.button?.title = title
         } else {
             statusItem.button?.title = "AI"
         }

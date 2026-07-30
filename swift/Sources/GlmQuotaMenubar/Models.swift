@@ -33,6 +33,8 @@ struct GLMState {
     var ok = false
     var q5h = 0.0        // remaining percentage
     var r5h = ""          // reset time string
+    var qWeekly = 0.0     // remaining percentage (Pro plan only)
+    var rWeekly = ""      // reset time string
     var qMcp = 0.0        // remaining percentage
     var rMcp = ""         // reset time string
     var tokens = 0
@@ -60,8 +62,18 @@ struct GLMState {
             }
             switch type {
             case "TOKENS_LIMIT":
-                state.q5h = rp
-                state.r5h = rst
+                // Pro plans return two TOKENS_LIMIT entries (5h + weekly).
+                // Tell them apart by reset-window length, not the opaque `unit`
+                // enum: a 5h window resets within a day, a weekly one in ~7 days.
+                let nowMs = Date().timeIntervalSince1970 * 1000
+                let spanHours = (ms - nowMs) / 1000.0 / 3600.0
+                if spanHours >= 24 {
+                    state.qWeekly = rp
+                    state.rWeekly = rst
+                } else {
+                    state.q5h = rp
+                    state.r5h = rst
+                }
             case "TIME_LIMIT":
                 state.qMcp = rp
                 state.rMcp = rst

@@ -95,6 +95,14 @@ class MenuBarController {
                 menu.addItem(infoItem("        resets: \(glmState.r5h)"))
             }
 
+            // Pro plan only — shown when a weekly reset window is present.
+            if !glmState.rWeekly.isEmpty {
+                let iw = icon(for: glmState.qWeekly)
+                let uw = 100.0 - glmState.qWeekly
+                menu.addItem(infoItem("  \(iw) Weekly: used \(Int(uw))%  |  left \(Int(glmState.qWeekly))%"))
+                menu.addItem(infoItem("        resets: \(glmState.rWeekly)"))
+            }
+
             menu.addItem(infoItem("  \(im) MCP: used \(Int(um))%  |  left \(Int(glmState.qMcp))%"))
             if !glmState.rMcp.isEmpty {
                 menu.addItem(infoItem("        resets: \(glmState.rMcp)"))

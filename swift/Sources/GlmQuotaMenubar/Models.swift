@@ -33,6 +33,7 @@ struct GLMState {
     var ok = false
     var q5h = 0.0        // remaining percentage
     var r5h = ""          // reset time string
+    var reset5h: Date?    // 5h window reset instant (used to pause refresh when exhausted)
     var qWeekly = 0.0     // remaining percentage (Pro plan only)
     var rWeekly = ""      // reset time string
     var qMcp = 0.0        // remaining percentage
@@ -52,9 +53,11 @@ struct GLMState {
             let type = (lim["type"] as? String) ?? ""
             let rp = 100.0 - toDouble(lim["percentage"])
             var rst = ""
+            var resetDate: Date? = nil
             let ms = toDouble(lim["nextResetTime"])
             if ms > 0 {
                 let date = Date(timeIntervalSince1970: ms / 1000.0)
+                resetDate = date
                 let formatter = DateFormatter()
                 formatter.dateFormat = "MM-dd HH:mm"
                 formatter.timeZone = TimeZone.current
@@ -73,6 +76,7 @@ struct GLMState {
                 } else {
                     state.q5h = rp
                     state.r5h = rst
+                    state.reset5h = resetDate
                 }
             case "TIME_LIMIT":
                 state.qMcp = rp

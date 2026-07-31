@@ -21,10 +21,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Timer fires every 2 min; skip 23:00–08:00
+    /// Timer fires every 2 min; skip 23:00–08:00, and skip while the 5h quota
+    /// is exhausted but not yet reset (refreshing would just return 0% again).
     private func onTimer() {
         let hour = Calendar.current.component(.hour, from: Date())
         if hour >= 23 || hour < 8 { return }
+        if menuBarController.shouldSkipAutoRefresh() { return }
         doFetch()
     }
 

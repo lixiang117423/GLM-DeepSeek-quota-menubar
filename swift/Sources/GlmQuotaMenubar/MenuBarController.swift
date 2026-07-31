@@ -53,6 +53,16 @@ class MenuBarController {
         rebuildMenu()
     }
 
+    /// 5h quota exhausted and the window hasn't reset yet → refreshing is
+    /// pointless (result stays 0%), so the auto-timer should skip. Manual
+    /// Refresh bypasses this. Resume happens automatically once now >= reset.
+    func shouldSkipAutoRefresh() -> Bool {
+        guard glmState.ok, glmState.q5h <= 0, let reset = glmState.reset5h else {
+            return false
+        }
+        return Date() < reset
+    }
+
     // MARK: - Menu rebuild
 
     private func rebuildMenu() {
@@ -145,6 +155,9 @@ class MenuBarController {
             formatter.dateFormat = "HH:mm:ss"
             let ts = formatter.string(from: updatedAt)
             menu.addItem(infoItem("🕐 Updated: \(ts)"))
+        }
+        if shouldSkipAutoRefresh() {
+            menu.addItem(infoItem("⏸ 额度已用尽,暂停自动刷新至 \(glmState.r5h)"))
         }
         menu.addItem(actionItem("🔄 Refresh", action: #selector(onRefresh)))
         menu.addItem(actionItem("🔑 Reload tokens", action: #selector(onReloadTokens)))

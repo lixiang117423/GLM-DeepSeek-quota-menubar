@@ -20,9 +20,17 @@ build() {
     swiftc -framework AppKit -o "$BINARY" "$SWIFT_DIR"/Sources/GlmQuotaMenubar/*.swift
 }
 
+build_if_needed() {
+    # 二进制缺失,或任一 Swift 源码比二进制新 → 重新编译。
+    # 否则 run.sh 会一直复用旧二进制,改代码后重跑也不生效。
+    if [ ! -f "$BINARY" ] || find "$SWIFT_DIR/Sources/GlmQuotaMenubar" -name '*.swift' -newer "$BINARY" -print -quit | grep -q .; then
+        build
+    fi
+}
+
 case "${1:-}" in
   --install)
-    [ -f "$BINARY" ] || build
+    build_if_needed
     mkdir -p "$HOME/Library/LaunchAgents"
     # plist 是模板,占位符替换为本机实际绝对路径——launchd 不展开 ~ 和环境变量
     sed -e "s|__BINARY__|$BINARY|g" "$PLIST_SRC" > "$PLIST_DST"
@@ -40,7 +48,7 @@ case "${1:-}" in
     echo "✅ 已移除 launchd 开机自启"
     ;;
   *)
-    [ -f "$BINARY" ] || build
+    build_if_needed
     cd "$SCRIPT_DIR"
     nohup "$BINARY" > /tmp/glm-quota-menubar.log 2>&1 &
     echo "GLM Quota MenuBar started (PID $!)"

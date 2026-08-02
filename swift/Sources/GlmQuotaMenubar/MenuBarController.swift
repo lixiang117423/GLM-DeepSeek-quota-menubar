@@ -79,21 +79,19 @@ class MenuBarController {
             return
         }
 
-        // Title bar — GLM 5h quota, plus weekly quota when present (Pro plan).
+        // Title bar — GLM quota (5h, plus weekly when present) + DeepSeek balance.
+        var parts: [String] = []
         if glmState.ok {
-            var title = "GLM\(icon(for: glmState.q5h))\(Int(glmState.q5h))%"
+            var part = "GLM\(icon(for: glmState.q5h))\(Int(glmState.q5h))%"
             if !glmState.rWeekly.isEmpty {
-                title += " | \(icon(for: glmState.qWeekly))\(Int(glmState.qWeekly))%"
+                part += " | \(icon(for: glmState.qWeekly))\(Int(glmState.qWeekly))%"
             }
-            statusItem.button?.title = title
-        } else {
-            statusItem.button?.title = "AI"
+            parts.append(part)
         }
-        // To restore DS to title bar, uncomment the block below and comment the 4 lines above:
-        // var parts: [String] = []
-        // if glmState.ok { parts.append("GLM\(icon(for: glmState.q5h))\(Int(glmState.q5h))%") }
-        // if dsState.ok { parts.append("DS💰\(fmtMoney(dsState.balance))") }
-        // statusItem.button?.title = parts.isEmpty ? "AI" : parts.joined(separator: " | ")
+        if dsState.ok {
+            parts.append("DS💰\(fmtMoney(dsState.balance, decimals: 2))")
+        }
+        statusItem.button?.title = parts.isEmpty ? "AI" : parts.joined(separator: " | ")
 
         // -- GLM section --
         if glmState.ok {

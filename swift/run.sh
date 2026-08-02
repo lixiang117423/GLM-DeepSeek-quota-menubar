@@ -12,12 +12,22 @@ PLIST_NAME="com.lixiang.glm-quota-menubar.plist"
 PLIST_SRC="$SCRIPT_DIR/$PLIST_NAME"
 PLIST_DST="$HOME/Library/LaunchAgents/$PLIST_NAME"
 
-# Build if needed (uses swiftc directly because SPM is broken on this macOS beta)
-if [ ! -f "$BINARY" ]; then
+# Build if needed (uses swiftc directly because SPM is broken on this macOS beta).
+# Rebuilds when the binary is missing or any Swift source is newer than it —
+# otherwise the script would keep launching a stale binary forever.
+build() {
     echo "Building GlmQuotaMenubar..."
     mkdir -p "$SCRIPT_DIR/.build"
     swiftc -framework AppKit -o "$BINARY" "$SCRIPT_DIR"/Sources/GlmQuotaMenubar/*.swift
-fi
+}
+
+build_if_needed() {
+    if [ ! -f "$BINARY" ] || find "$SCRIPT_DIR/Sources/GlmQuotaMenubar" -name '*.swift' -newer "$BINARY" -print -quit | grep -q .; then
+        build
+    fi
+}
+
+build_if_needed
 
 case "${1:-}" in
   --install)

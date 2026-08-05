@@ -65,12 +65,11 @@ struct GLMState {
             }
             switch type {
             case "TOKENS_LIMIT":
-                // Pro plans return two TOKENS_LIMIT entries (5h + weekly).
-                // Tell them apart by reset-window length, not the opaque `unit`
-                // enum: a 5h window resets within a day, a weekly one in ~7 days.
-                let nowMs = Date().timeIntervalSince1970 * 1000
-                let spanHours = (ms - nowMs) / 1000.0 / 3600.0
-                if spanHours >= 24 {
+                // GLM labels the window by `unit`: 3 = 5h, 6 = weekly (Pro).
+                // Classify by `unit`, NOT by reset-time span — the weekly window
+                // shrinks below 24h as it nears reset and would be mistaken for 5h.
+                let unit = toInt(lim["unit"])
+                if unit == 6 {
                     state.qWeekly = rp
                     state.rWeekly = rst
                 } else {

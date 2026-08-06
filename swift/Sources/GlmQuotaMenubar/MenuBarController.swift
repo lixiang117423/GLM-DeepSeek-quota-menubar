@@ -53,14 +53,20 @@ class MenuBarController {
         rebuildMenu()
     }
 
-    /// 5h quota exhausted and the window hasn't reset yet → refreshing is
-    /// pointless (result stays 0%), so the auto-timer should skip. Manual
-    /// Refresh bypasses this. Resume happens automatically once now >= reset.
+    /// Auto-refresh is pointless while a quota is exhausted but not yet reset
+    /// (the result just stays 0%), so the auto-timer should skip. Manual
+    /// Refresh bypasses this. Weekly exhaustion takes precedence (it zeroes
+    /// 5h too); resume is automatic once now passes the relevant reset time.
     func shouldSkipAutoRefresh() -> Bool {
-        guard glmState.ok, glmState.q5h <= 0, let reset = glmState.reset5h else {
-            return false
+        guard glmState.ok else { return false }
+        if !glmState.rWeekly.isEmpty, glmState.qWeekly <= 0,
+           let reset = glmState.resetWeekly, Date() < reset {
+            return true
         }
-        return Date() < reset
+        if glmState.q5h <= 0, let reset = glmState.reset5h, Date() < reset {
+            return true
+        }
+        return false
     }
 
     // MARK: - Menu rebuild
@@ -155,7 +161,10 @@ class MenuBarController {
             menu.addItem(infoItem("🕐 Updated: \(ts)"))
         }
         if shouldSkipAutoRefresh() {
-            menu.addItem(infoItem("⏸ 额度已用尽,暂停自动刷新至 \(glmState.r5h)"))
+            // weekly 耗尽时 5h 也被置零,暂停到的是 weekly 重置,提示用对应时间
+            let resumeAt = (!glmState.rWeekly.isEmpty && glmState.qWeekly <= 0)
+                ? glmState.rWeekly : glmState.r5h
+            menu.addItem(infoItem("⏸ 额度已用尽,暂停自动刷新至 \(resumeAt)"))
         }
         menu.addItem(actionItem("🔄 Refresh", action: #selector(onRefresh)))
         menu.addItem(actionItem("🔑 Reload tokens", action: #selector(onReloadTokens)))

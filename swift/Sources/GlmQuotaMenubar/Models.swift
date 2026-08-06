@@ -36,6 +36,7 @@ struct GLMState {
     var reset5h: Date?    // 5h window reset instant (used to pause refresh when exhausted)
     var qWeekly = 0.0     // remaining percentage (Pro plan only)
     var rWeekly = ""      // reset time string
+    var resetWeekly: Date?  // weekly window reset instant
     var qMcp = 0.0        // remaining percentage
     var rMcp = ""         // reset time string
     var tokens = 0
@@ -72,6 +73,7 @@ struct GLMState {
                 if unit == 6 {
                     state.qWeekly = rp
                     state.rWeekly = rst
+                    state.resetWeekly = resetDate
                 } else {
                     state.q5h = rp
                     state.r5h = rst
@@ -83,6 +85,11 @@ struct GLMState {
             default:
                 break
             }
+        }
+        // weekly 是一周总额度上限:它耗尽时,5h 窗口即便 API 报有余量也实际不可用
+        // (一周的消耗不能超过 weekly),把 5h 一并置零,避免 UI 误导。
+        if !state.rWeekly.isEmpty, state.qWeekly <= 0 {
+            state.q5h = 0
         }
         if let daily, let tu = daily["totalUsage"] as? [String: Any] {
             state.tokens = toInt(tu["totalTokensUsage"])

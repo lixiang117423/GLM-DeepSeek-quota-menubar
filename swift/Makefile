@@ -1,4 +1,4 @@
-.PHONY: build run install uninstall clean
+.PHONY: build run install uninstall test clean
 
 BINARY := .build/glm-quota-menubar
 SOURCES := $(wildcard Sources/GlmQuotaMenubar/*.swift)
@@ -31,6 +31,10 @@ uninstall:
 	launchctl bootout gui/$(shell id -u)/$(PLIST_NAME) 2>/dev/null || true
 	rm -f $(PLIST_DST)
 	@echo "✅ Removed launchd auto-start"
+
+test: build
+	swiftc -o .build/model-tests tests/main.swift Sources/GlmQuotaMenubar/Models.swift
+	.build/model-tests
 
 clean:
 	rm -rf .build

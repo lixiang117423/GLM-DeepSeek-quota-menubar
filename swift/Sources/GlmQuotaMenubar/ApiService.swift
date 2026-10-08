@@ -6,11 +6,14 @@ struct ApiService {
     private static let glmBase = "https://open.bigmodel.cn"
     private static let deepseekApi = "https://api.deepseek.com"
 
-    /// GET with a Bearer token; returns the parsed top-level JSON dictionary.
-    private static func apiGet(url: String, token: String) -> [String: Any]? {
+    /// GET with an optional Bearer token; returns the parsed top-level JSON dictionary.
+    /// 默认 10s;团队看板 force=1 上游慢时要 ~20s,单独放宽(见 fetchTeamUsage)。
+    private static func apiGet(url: String, token: String?, timeout: TimeInterval = 10) -> [String: Any]? {
         guard let requestUrl = URL(string: url) else { return nil }
-        var req = URLRequest(url: requestUrl, timeoutInterval: 10)
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        var req = URLRequest(url: requestUrl, timeoutInterval: timeout)
+        if let token, !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         req.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let semaphore = DispatchSemaphore(value: 0)
@@ -29,7 +32,8 @@ struct ApiService {
             }
         }.resume()
 
-        _ = semaphore.wait(timeout: .now() + 10)
+        // 比 URLSession 超时多 2s,让 URLSession 先触发、走上面打日志的分支
+        _ = semaphore.wait(timeout: .now() + timeout + 2)
         return result
     }
 
@@ -65,6 +69,20 @@ struct ApiService {
             return nil
         }
         return dict
+    }
+
+    /// 团队看板按 Key 聚合的用量(局域网明文 HTTP,只读、无需鉴权)。
+    /// 口径见 TeamConfig.usageURL:force=1 拿实时数,与 web 端刷新按钮一致。
+    /// 超时放宽到 30s:force=1 穿透看板缓存走上游实时查询,2026-10-08 实测稳定 18~21s,
+    /// 用默认 10s 会被掐断,团队段整段消失。
+    static func fetchTeamUsage() -> [String: Any]? {
+        return apiGet(url: TeamConfig.usageURL, token: nil, timeout: 30)
+    }
+
+    /// force=1 超时后的降级路径:走看板 1 小时缓存(实测 ~50ms)。
+    /// 宁可显示最多 1 小时旧的数据,也不要标题空着(与领导 web 端会有小幅出入,恢复即好)。
+    static func fetchTeamUsageCached() -> [String: Any]? {
+        return apiGet(url: TeamConfig.usageURLCached, token: nil)
     }
 
     private static func isoDateString() -> String {

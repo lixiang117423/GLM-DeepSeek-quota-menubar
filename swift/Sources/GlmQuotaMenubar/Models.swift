@@ -218,18 +218,10 @@ struct TeamState {
         let today = isoDateString(now)
         let month = String(today.prefix(7))
         // 账户级 daily 连续含零用量天,末日即看板数据的覆盖终点。
-        // 个人序列省略零用量的天,但也会滞后于账户级(2026-09-16 实测落后 1 小时+),
-        // 所以"个人缺今天"只有在团队整体今天零用量时才能断定为 ¥0。
         var dataEnd = ""
-        var accountTodayCost = 0.0
         if let accountDaily = data["daily"] as? [[String: Any]] {
             if let lastRaw = accountDaily.last?["date"] as? String {
                 dataEnd = shiftDate(lastRaw, days: TeamConfig.dayShift)
-            }
-            for entry in accountDaily {
-                if let raw = entry["date"] as? String, shiftDate(raw, days: TeamConfig.dayShift) == today {
-                    accountTodayCost += toDouble(entry["cost"])
-                }
             }
         }
 
@@ -237,13 +229,18 @@ struct TeamState {
             state.todayFound = true
             state.displayCost = todayEntry.cost
             state.displayDate = todayEntry.date
-        } else if !dataEnd.isEmpty, dataEnd >= today, accountTodayCost < 0.005 {
-            // 数据已覆盖今天且团队整体零用量,个人序列缺今天 = 今天花了 ¥0,照实显示
+        } else if !dataEnd.isEmpty, dataEnd >= today {
+            // 个人序列省略零用量的天:看板已覆盖到今天而个人缺今天 → 判定今天 ¥0。
+            // 2026-10-09 放宽:此前要求"全团队今天零用量"才敢判定(2026-09-16 担心个人
+            // 序列滞后于账户级,实测落后 1 小时+),结果自己零消费、同事有消费的日子,
+            // 标题退回显示最近一天的旧值(标题不带日期,看着像今天的数,当天实际踩过)。
+            // 当天实测逐人数据与总额一分不差,滞后不常见,故放宽。
+            // 残余风险:当天首次消费后、看板导出前,今日会短暂显示 ¥0 再跳为真实值。
             state.todayFound = true
             state.displayCost = 0
             state.displayDate = today
         } else {
-            // 看板导出滞后,今天的数还没出来:显示最近一天,菜单里注明日期
+            // 看板还没导出到今天,无法判定:显示最近一天,菜单里注明日期
             let last = daily[daily.count - 1]
             state.displayCost = last.cost
             state.displayDate = last.date
@@ -298,7 +295,7 @@ struct TeamState {
 
 // MARK: - 标题栏文本
 
-/// 标题栏 DeepSeek 段:showTeam=true 用团队口径(今日费用+剩余额度),
+/// 标题栏 DeepSeek 段:showTeam=true 用团队口径(今日费用+本月余额),
 /// false 只显示个人余额(DeepSeek API 没有每日用量接口,花费拿不到)。
 /// 返回 nil 表示整段省略——所选口径没拉到数据时不回落到另一口径,
 /// 免得用户以为切过去了、显示的其实还是旧口径。
@@ -307,7 +304,7 @@ func dsTitleSegment(team: TeamState?, ds: DSState, showTeam: Bool, showGLM: Bool
     let label = showGLM ? "DS" : "DeepSeek"
     if showTeam {
         guard let team, team.ok else { return nil }
-        return "\(label)\(icon(for: team.leftPct))¥\(fmtMoney(team.displayCost, decimals: 1)) 剩¥\(fmtMoney(team.quotaLeft, decimals: 2))"
+        return "\(label)\(icon(for: team.leftPct))¥\(fmtMoney(team.displayCost, decimals: 1)) 余额¥\(fmtMoney(team.quotaLeft, decimals: 2))"
     }
     guard ds.ok else { return nil }
     return "\(label)\(icon(for: balanceIconPct(ds.balance)))¥\(fmtMoney(ds.balance, decimals: 2))"

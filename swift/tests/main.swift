@@ -43,19 +43,32 @@ func makeTeamData(accountTodayCost: Double) -> [String: Any] {
     ]
 }
 
-// Case 1: 团队今天已有用量,个人序列缺今天 → 不能显示假的 ¥0,
-// 应显示最近一天并注明日期(todayFound=false)
+// Case 1: 看板已覆盖今天、个人序列缺今天 → 判定今天 ¥0(2026-10-09 改)。
+// 此前要求"全团队今天零用量"才敢判定,导致自己零消费但同事有消费的日子
+// 标题退回显示最近一天的旧值(看起来像今天的数,2026-10-09 实际踩过)。
 let s1 = teamFrom(makeTeamData(accountTodayCost: 20.87))
 check("team: case1 ok", s1.ok)
-check("team: 个人滞后时不得显示 ¥0 (实际 \(s1.displayCost))", s1.displayCost == 21.32)
-check("team: 个人滞后时 todayFound=false (实际 \(s1.todayFound))", s1.todayFound == false)
-check("team: 个人滞后时 displayDate=09-15 (实际 \(s1.displayDate))", s1.displayDate == "2026-09-15")
+check("team: 个人缺今天且看板覆盖今天 → ¥0 (实际 \(s1.displayCost))", s1.displayCost == 0)
+check("team: 个人缺今天且看板覆盖今天 → todayFound=true (实际 \(s1.todayFound))", s1.todayFound == true)
+check("team: 个人缺今天且看板覆盖今天 → displayDate=今天 (实际 \(s1.displayDate))", s1.displayDate == "2026-09-16")
 check("team: 本月含昨天=39.82 (实际 \(s1.monthUsed))", abs(s1.monthUsed - 39.82) < 0.001)
 
-// Case 2: 团队今天整体零用量,个人缺今天 → 照实显示 ¥0
+// Case 2: 团队今天整体零用量,个人缺今天 → 照实显示 ¥0(与 case1 同一条规则)
 let s2 = teamFrom(makeTeamData(accountTodayCost: 0.0))
 check("team: 团队零用量时 displayCost=0 (实际 \(s2.displayCost))", s2.displayCost == 0)
 check("team: 团队零用量时 todayFound=true (实际 \(s2.todayFound))", s2.todayFound == true)
+
+// Case 2b: 看板还没导出到今天(数据截至 09-15)→ 无法判定今天,
+// 退回最近一天并注明日期(标题只显示数值,日期在菜单里)
+var d5 = makeTeamData(accountTodayCost: 20.87)
+d5["daily"] = [
+    ["date": "2026-09-14", "cost": 228.53],
+    ["date": "2026-09-15", "cost": 232.96],
+]
+let s5 = teamFrom(d5)
+check("team: 看板未覆盖今天时退回最近一天 (实际 \(s5.displayCost))", s5.displayCost == 21.32)
+check("team: 看板未覆盖今天时 todayFound=false (实际 \(s5.todayFound))", s5.todayFound == false)
+check("team: 看板未覆盖今天时 displayDate=09-15 (实际 \(s5.displayDate))", s5.displayDate == "2026-09-15")
 
 // Case 3: 个人序列含今天 → 正常显示今天的数
 var d3 = makeTeamData(accountTodayCost: 20.87)
@@ -135,11 +148,11 @@ func makeDS(_ balance: Double) -> DSState {
 let dsRich = makeDS(87.5)
 check("ds: fixture ok (实际 \(dsRich.balance))", dsRich.ok)
 
-// 团队模式:今日费用(1 位小数)+ 剩余额度(2 位);s1=今日滞后显示 09-15 的 21.32,剩 600-39.82=560.18
+// 团队模式:今日费用(1 位小数)+ 余额(2 位,团队月度剩余);s5=看板未覆盖今天,回退显示 09-15 的 21.32,余 600-39.82=560.18
 check("title: 团队模式(有 GLM)用 DS 缩写",
-      dsTitleSegment(team: s1, ds: dsRich, showTeam: true, showGLM: true) == "DS🟢¥21.3 剩¥560.18")
+      dsTitleSegment(team: s5, ds: dsRich, showTeam: true, showGLM: true) == "DS🟢¥21.3 余额¥560.18")
 check("title: 团队模式(无 GLM)用全称",
-      dsTitleSegment(team: s1, ds: dsRich, showTeam: true, showGLM: false) == "DeepSeek🟢¥21.3 剩¥560.18")
+      dsTitleSegment(team: s5, ds: dsRich, showTeam: true, showGLM: false) == "DeepSeek🟢¥21.3 余额¥560.18")
 
 // 个人模式:只显示余额,2 位小数
 check("title: 个人模式只显示余额",

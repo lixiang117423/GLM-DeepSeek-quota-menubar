@@ -381,9 +381,9 @@ struct TeamState {
 /// false 只显示个人余额(DeepSeek API 没有每日用量接口,花费拿不到)。
 /// 返回 nil 表示整段省略——所选口径没拉到数据时不回落到另一口径,
 /// 免得用户以为切过去了、显示的其实还是旧口径。
-/// showGLM=false 时标题没有 GLM 段,DS 用全称;并排时缩写省宽度。
-func dsTitleSegment(team: TeamState?, ds: DSState, showTeam: Bool, showGLM: Bool) -> String? {
-    let label = showGLM ? "DS" : "DeepSeek"
+/// 标题栏一律用 DS 缩写,全称只在下拉菜单里出现(标题栏宽度有限)。
+func dsTitleSegment(team: TeamState?, ds: DSState, showTeam: Bool) -> String? {
+    let label = "DS"
     if showTeam {
         guard let team, team.ok else { return nil }
         return "\(label)\(icon(for: team.leftPct))¥\(fmtMoney(team.displayCost, decimals: 1)) 余额¥\(fmtMoney(team.quotaLeft, decimals: 2))"
@@ -401,12 +401,11 @@ func balanceIconPct(_ balance: Double) -> Double {
 }
 
 /// 标题栏 OpenCode 段:只放 5h 与 weekly —— monthly 变化慢,放菜单里够了;
-/// 三个窗口并排会把标题撑得过宽。showGLM=false 时用全称,并排时缩写省宽度,
-/// 与 dsTitleSegment 的 DS/DeepSeek 同一套惯例。
+/// 三个窗口并排会把标题撑得过宽。标题栏一律缩写成 OC,全称留菜单,
+/// 与 dsTitleSegment 同一套惯例。
 /// 返回 nil 表示没拉到数据:整段省略,不要显示 "0% 0%" 那种看着像额度用尽的文本。
-func ocTitleSegment(_ state: OCState, showGLM: Bool) -> String? {
+func ocTitleSegment(_ state: OCState) -> String? {
     guard state.ok else { return nil }
-    let label = showGLM ? "OC" : "OpenCode"
-    return "\(label)\(icon(for: state.rollingLeft))\(Int(state.rollingLeft))% "
+    return "OC\(icon(for: state.rollingLeft))\(Int(state.rollingLeft))% "
         + "\(icon(for: state.weeklyLeft))\(Int(state.weeklyLeft))%"
 }

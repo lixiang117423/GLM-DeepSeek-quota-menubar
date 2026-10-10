@@ -149,33 +149,30 @@ let dsRich = makeDS(87.5)
 check("ds: fixture ok (实际 \(dsRich.balance))", dsRich.ok)
 
 // 团队模式:今日费用(1 位小数)+ 余额(2 位,团队月度剩余);s5=看板未覆盖今天,回退显示 09-15 的 21.32,余 600-39.82=560.18
-check("title: 团队模式(有 GLM)用 DS 缩写",
-      dsTitleSegment(team: s5, ds: dsRich, showTeam: true, showGLM: true) == "DS🟢¥21.3 余额¥560.18")
-check("title: 团队模式(无 GLM)用全称",
-      dsTitleSegment(team: s5, ds: dsRich, showTeam: true, showGLM: false) == "DeepSeek🟢¥21.3 余额¥560.18")
+// 标题栏一律缩写(OC/DS):全称只在下拉菜单里出现,标题栏放不下
+check("title: 团队模式用 DS 缩写",
+      dsTitleSegment(team: s5, ds: dsRich, showTeam: true) == "DS🟢¥21.3 余额¥560.18")
 
 // 个人模式:只显示余额,2 位小数
 check("title: 个人模式只显示余额",
-      dsTitleSegment(team: s1, ds: dsRich, showTeam: false, showGLM: true) == "DS🟢¥87.50")
-check("title: 个人模式(无 GLM)用全称",
-      dsTitleSegment(team: s1, ds: dsRich, showTeam: false, showGLM: false) == "DeepSeek🟢¥87.50")
+      dsTitleSegment(team: s1, ds: dsRich, showTeam: false) == "DS🟢¥87.50")
 
 // 个人余额阈值配色:<¥10 红、<¥50 黄、否则绿
 check("title: 个人余额<¥10 红",
-      dsTitleSegment(team: s1, ds: makeDS(8.5), showTeam: false, showGLM: true) == "DS🔴¥8.50")
+      dsTitleSegment(team: s1, ds: makeDS(8.5), showTeam: false) == "DS🔴¥8.50")
 check("title: 个人余额<¥50 黄",
-      dsTitleSegment(team: s1, ds: makeDS(49.9), showTeam: false, showGLM: true) == "DS🟡¥49.90")
+      dsTitleSegment(team: s1, ds: makeDS(49.9), showTeam: false) == "DS🟡¥49.90")
 
 // 所选口径没数据时整段省略,不回落到另一口径(免得以为切过去了显示的还是旧口径)
 check("title: 个人模式无个人数据 → nil(不回落团队)",
-      dsTitleSegment(team: s1, ds: DSState(), showTeam: false, showGLM: true) == nil)
+      dsTitleSegment(team: s1, ds: DSState(), showTeam: false) == nil)
 check("title: 团队模式没拉到 → nil",
-      dsTitleSegment(team: nil, ds: dsRich, showTeam: true, showGLM: true) == nil)
+      dsTitleSegment(team: nil, ds: dsRich, showTeam: true) == nil)
 check("title: 团队模式解析失败 → nil",
-      dsTitleSegment(team: s4, ds: dsRich, showTeam: true, showGLM: true) == nil)
+      dsTitleSegment(team: s4, ds: dsRich, showTeam: true) == nil)
 // 反向同理:个人模式不受团队失败影响
 check("title: 个人模式不受团队失败影响",
-      dsTitleSegment(team: s4, ds: dsRich, showTeam: false, showGLM: true) == "DS🟢¥87.50")
+      dsTitleSegment(team: s4, ds: dsRich, showTeam: false) == "DS🟢¥87.50")
 
 // MARK: - OCState.fromApi(OpenCode GO 解析)
 
@@ -255,23 +252,21 @@ check("oc: 无 resetsAt 时重置瞬间为 nil", ocNoReset.resetRolling == nil)
 
 // MARK: - ocTitleSegment(标题栏 OpenCode 段)
 
-// 标题只放 5h + weekly(monthly 在菜单里)。GLM 并排时缩写成 OC 省宽度,
-// 与 dsTitleSegment 的 DS/DeepSeek 同一套惯例。
-check("title: opencode 全称(无 GLM)",
-      ocTitleSegment(ocFresh, showGLM: false) == "OpenCode🟢100% 🟢100%")
-check("title: opencode 缩写(有 GLM)",
-      ocTitleSegment(ocFresh, showGLM: true) == "OC🟢100% 🟢100%")
+// 标题只放 5h + weekly(monthly 在菜单里)。标题栏一律缩写成 OC,
+// 全称只在下拉菜单里出现 —— 与 dsTitleSegment 同一套惯例。
+check("title: opencode 缩写成 OC",
+      ocTitleSegment(ocFresh) == "OC🟢100% 🟢100%")
 check("title: opencode 显示剩余而非已用",
-      ocTitleSegment(ocUsed, showGLM: false) == "OpenCode🟢88% 🟢60%")
+      ocTitleSegment(ocUsed) == "OC🟢88% 🟢60%")
 // 图标阈值沿用 icon(for:):≤10 红、≤50 黄、否则绿
 check("title: opencode 低额度转黄/红",
       ocTitleSegment(OCState.fromApi(data: ocData(
-        rolling: ocWindow(95), weekly: ocWindow(85), monthly: ocWindow(0))), showGLM: false)
-        == "OpenCode🔴5% 🟡15%")
-// 没拉到数据时整段省略(标题不出现 "OpenCode0% 0%")
-check("title: opencode 无数据 → nil", ocTitleSegment(OCState(), showGLM: false) == nil)
+        rolling: ocWindow(95), weekly: ocWindow(85), monthly: ocWindow(0))))
+        == "OC🔴5% 🟡15%")
+// 没拉到数据时整段省略(标题不出现 "OC0% 0%")
+check("title: opencode 无数据 → nil", ocTitleSegment(OCState()) == nil)
 check("title: opencode 解析失败 → nil",
-      ocTitleSegment(OCState.fromApi(data: [:]), showGLM: true) == nil)
+      ocTitleSegment(OCState.fromApi(data: [:])) == nil)
 
 print(failures == 0 ? "\nALL \(cases) PASS" : "\n\(failures)/\(cases) FAILURE(S)")
 exit(failures == 0 ? 0 : 1)

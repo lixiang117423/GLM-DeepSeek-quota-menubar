@@ -100,11 +100,11 @@ class MenuBarController {
             parts.append(part)
         }
         // OpenCode 段:5h + weekly(monthly 在菜单里);格式细节见 ocTitleSegment
-        if showOC, let seg = ocTitleSegment(ocState, showGLM: showGLM) {
+        if showOC, let seg = ocTitleSegment(ocState) {
             parts.append(seg)
         }
         // DS 段:团队(今日费用+剩余)或个人余额,菜单里可切;格式细节见 dsTitleSegment
-        if let seg = dsTitleSegment(team: teamState, ds: dsState, showTeam: showDSTeam, showGLM: showGLM) {
+        if let seg = dsTitleSegment(team: teamState, ds: dsState, showTeam: showDSTeam) {
             parts.append(seg)
         }
         statusItem.button?.title = parts.isEmpty ? "AI" : parts.joined(separator: " | ")

@@ -177,5 +177,101 @@ check("title: 团队模式解析失败 → nil",
 check("title: 个人模式不受团队失败影响",
       dsTitleSegment(team: s4, ds: dsRich, showTeam: false, showGLM: true) == "DS🟢¥87.50")
 
+// MARK: - OCState.fromApi(OpenCode GO 解析)
+
+// 夹具取自 2026-10-10 用真实 key 抓的响应;fetchOpenCodeUsage 返回的就是这个 usage 字典。
+// 注意 percent 是"已用",app 一律显示"剩余",所以解析要取反。
+func ocWindow(_ percent: Any, status: String = "ok",
+              resetsAt: String = "2026-10-10T11:18:08.000Z") -> [String: Any] {
+    return ["status": status, "percent": percent, "resetsAt": resetsAt]
+}
+func ocData(rolling: Any, weekly: Any, monthly: Any) -> [String: Any] {
+    return ["rolling": rolling, "weekly": weekly, "monthly": monthly]
+}
+// 抓到的真实响应:三个窗口都是 0% 已用,各自的重置时刻不同
+let ocFresh = OCState.fromApi(data: ocData(
+    rolling: ocWindow(0, resetsAt: "2026-10-10T11:18:08.000Z"),
+    weekly: ocWindow(0, resetsAt: "2026-10-12T00:00:00.000Z"),
+    monthly: ocWindow(0, resetsAt: "2026-11-10T05:58:37.000Z")))
+check("oc: 真实响应解析 ok", ocFresh.ok)
+check("oc: 已用 0% → 剩 100% (实际 5h=\(ocFresh.rollingLeft) w=\(ocFresh.weeklyLeft) m=\(ocFresh.monthlyLeft))",
+      ocFresh.rollingLeft == 100 && ocFresh.weeklyLeft == 100 && ocFresh.monthlyLeft == 100)
+
+// 已用 12% → 剩 88%,$12 上限下剩 $10.56
+let ocUsed = OCState.fromApi(data: ocData(
+    rolling: ocWindow(12), weekly: ocWindow(40), monthly: ocWindow(3)))
+check("oc: 5h 已用 12% → 剩 88% (实际 \(ocUsed.rollingLeft))", ocUsed.rollingLeft == 88)
+check("oc: weekly 已用 40% → 剩 60% (实际 \(ocUsed.weeklyLeft))", ocUsed.weeklyLeft == 60)
+check("oc: monthly 已用 3% → 剩 97% (实际 \(ocUsed.monthlyLeft))", ocUsed.monthlyLeft == 97)
+check("oc: 5h 剩 $10.56 (实际 \(ocUsed.rollingUSD))", abs(ocUsed.rollingUSD - 10.56) < 1e-9)
+check("oc: weekly 剩 $18.00 (实际 \(ocUsed.weeklyUSD))", abs(ocUsed.weeklyUSD - 18.0) < 1e-9)
+check("oc: monthly 剩 $58.20 (实际 \(ocUsed.monthlyUSD))", abs(ocUsed.monthlyUSD - 58.2) < 1e-9)
+
+// percent 字段各家返回类型不一致(GLM 那边就见过 Int/Double/String 混着来),统一走 toDouble
+let ocStr = OCState.fromApi(data: ocData(
+    rolling: ocWindow("12"), weekly: ocWindow(12.0), monthly: ocWindow(12)))
+check("oc: percent 为字符串时同样解析 (实际 \(ocStr.rollingLeft))", ocStr.rollingLeft == 88)
+
+// resetsAt 是 UTC ISO8601(带毫秒),解析成瞬时值后按本机时区显示
+let isoFormatter = ISO8601DateFormatter()
+isoFormatter.timeZone = TimeZone(identifier: "UTC")
+check("oc: 5h 重置时刻解析为 2026-10-10T11:18:08Z",
+      ocFresh.resetRolling == isoFormatter.date(from: "2026-10-10T11:18:08Z"))
+check("oc: weekly 重置时刻解析为 2026-10-12T00:00:00Z",
+      ocFresh.resetWeekly == isoFormatter.date(from: "2026-10-12T00:00:00Z"))
+check("oc: monthly 重置时刻解析为 2026-11-10T05:58:37Z",
+      ocFresh.resetMonthly == isoFormatter.date(from: "2026-11-10T05:58:37Z"))
+// 显示串按 GLM 的 MM-dd HH:mm 惯例,长度固定 11(如 "10-10 19:18")
+check("oc: 5h 重置串形如 MM-dd HH:mm (实际 \"\(ocFresh.rRolling)\")",
+      ocFresh.rRolling.count == 11 && ocFresh.rRolling.contains("-") && ocFresh.rRolling.contains(":"))
+
+// status != "ok":限流/耗尽窗口按已用满额处理,不能显示成"还有额度"
+let ocBad = OCState.fromApi(data: ocData(
+    rolling: ocWindow(5, status: "rate_limited"), weekly: ocWindow(0), monthly: ocWindow(0)))
+check("oc: status!=ok 的窗口按耗尽处理 (实际 \(ocBad.rollingLeft))", ocBad.rollingLeft == 0)
+
+// 越界 percent 夹到 0...100,避免负额度或 >100% 显示
+let ocOver = OCState.fromApi(data: ocData(
+    rolling: ocWindow(120), weekly: ocWindow(-5), monthly: ocWindow(50)))
+check("oc: 已用 >100% → 剩 0 (实际 \(ocOver.rollingLeft))", ocOver.rollingLeft == 0)
+check("oc: 已用 <0% → 剩 100 (实际 \(ocOver.weeklyLeft))", ocOver.weeklyLeft == 100)
+
+// 缺窗口 / 空响应 / 顶层为 nil → ok=false。
+// 宁可整段 ⚠️ 也不要显示成"🔴0%":三个窗口不知道哪个是缺的,零值会被误读成额度用尽
+// (GLM 段曾因无解释地消失排查了一轮,2026-10-08)。
+check("oc: data 为 nil → ok=false", !OCState.fromApi(data: nil).ok)
+check("oc: 空字典 → ok=false", !OCState.fromApi(data: [:]).ok)
+check("oc: 缺 weekly → ok=false", !OCState.fromApi(data: ["rolling": ocWindow(0), "monthly": ocWindow(0)]).ok)
+check("oc: 缺 rolling → ok=false", !OCState.fromApi(data: ["weekly": ocWindow(0), "monthly": ocWindow(0)]).ok)
+check("oc: 缺 monthly → ok=false", !OCState.fromApi(data: ["rolling": ocWindow(0), "weekly": ocWindow(0)]).ok)
+// 窗口在但 resetsAt 缺失:百分比仍可信,照常解析,只是没有重置时间
+let ocNoReset = OCState.fromApi(data: ocData(
+    rolling: ["status": "ok", "percent": 10],
+    weekly: ["status": "ok", "percent": 10],
+    monthly: ["status": "ok", "percent": 10]))
+check("oc: 无 resetsAt 仍解析百分比 (实际 \(ocNoReset.rollingLeft))", ocNoReset.rollingLeft == 90)
+check("oc: 无 resetsAt 时重置串为空", ocNoReset.rRolling.isEmpty)
+check("oc: 无 resetsAt 时重置瞬间为 nil", ocNoReset.resetRolling == nil)
+
+// MARK: - ocTitleSegment(标题栏 OpenCode 段)
+
+// 标题只放 5h + weekly(monthly 在菜单里)。GLM 并排时缩写成 OC 省宽度,
+// 与 dsTitleSegment 的 DS/DeepSeek 同一套惯例。
+check("title: opencode 全称(无 GLM)",
+      ocTitleSegment(ocFresh, showGLM: false) == "OpenCode🟢100% 🟢100%")
+check("title: opencode 缩写(有 GLM)",
+      ocTitleSegment(ocFresh, showGLM: true) == "OC🟢100% 🟢100%")
+check("title: opencode 显示剩余而非已用",
+      ocTitleSegment(ocUsed, showGLM: false) == "OpenCode🟢88% 🟢60%")
+// 图标阈值沿用 icon(for:):≤10 红、≤50 黄、否则绿
+check("title: opencode 低额度转黄/红",
+      ocTitleSegment(OCState.fromApi(data: ocData(
+        rolling: ocWindow(95), weekly: ocWindow(85), monthly: ocWindow(0))), showGLM: false)
+        == "OpenCode🔴5% 🟡15%")
+// 没拉到数据时整段省略(标题不出现 "OpenCode0% 0%")
+check("title: opencode 无数据 → nil", ocTitleSegment(OCState(), showGLM: false) == nil)
+check("title: opencode 解析失败 → nil",
+      ocTitleSegment(OCState.fromApi(data: [:]), showGLM: true) == nil)
+
 print(failures == 0 ? "\nALL \(cases) PASS" : "\n\(failures)/\(cases) FAILURE(S)")
 exit(failures == 0 ? 0 : 1)

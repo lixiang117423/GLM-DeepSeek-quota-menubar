@@ -160,6 +160,88 @@ struct DSState {
     }
 }
 
+// MARK: - OpenCode GO(订阅制,额度按美元计)
+
+/// GO 套餐的额度接口(/zen/go/v1/usage)只回"已用百分比",不含金额;
+/// 上限是套餐固定的 $12/5h、$30/周、$60/月(2026-10 核对),
+/// 所以美元余额一律由上限换算,接口那边改套餐才会变。
+struct OCState {
+    static let cap5h = 12.0
+    static let capWeekly = 30.0
+    static let capMonthly = 60.0
+
+    var ok = false
+    var rollingLeft = 0.0      // remaining percentage
+    var rRolling = ""          // reset time string
+    var resetRolling: Date?
+    var weeklyLeft = 0.0
+    var rWeekly = ""
+    var resetWeekly: Date?
+    var monthlyLeft = 0.0
+    var rMonthly = ""
+    var resetMonthly: Date?
+
+    var rollingUSD: Double { OCState.cap5h * rollingLeft / 100 }
+    var weeklyUSD: Double { OCState.capWeekly * weeklyLeft / 100 }
+    var monthlyUSD: Double { OCState.capMonthly * monthlyLeft / 100 }
+
+    /// `data` 是 fetchOpenCodeUsage 返回的 `usage` 字典(无 {code,success,data} 包装,
+    /// 与 GLM 不同)。三个窗口缺一不可:缺窗口时默认值 0 会被读成"额度用尽",
+    /// 宁可 ok=false 让 UI 显 ⚠️ 也不要给一个看起来确定的错数。
+    static func fromApi(data: [String: Any]?) -> OCState {
+        var state = OCState()
+        guard let data,
+              let rolling = data["rolling"] as? [String: Any],
+              let weekly = data["weekly"] as? [String: Any],
+              let monthly = data["monthly"] as? [String: Any] else {
+            return state
+        }
+        state.ok = true
+
+        let r = parseWindow(rolling)
+        state.rollingLeft = r.left
+        state.rRolling = r.rst
+        state.resetRolling = r.reset
+
+        let w = parseWindow(weekly)
+        state.weeklyLeft = w.left
+        state.rWeekly = w.rst
+        state.resetWeekly = w.reset
+
+        let m = parseWindow(monthly)
+        state.monthlyLeft = m.left
+        state.rMonthly = m.rst
+        state.resetMonthly = m.reset
+
+        return state
+    }
+
+    /// 单窗口:percent 是"已用",取反成剩余。status 非 "ok"(限流/耗尽)按已用满额处理 ——
+    /// 那种窗口实际拿不到额度,显示成有余量会误导。
+    private static func parseWindow(_ dict: [String: Any]) -> (left: Double, rst: String, reset: Date?) {
+        let used = (dict["status"] as? String) == "ok" ? toDouble(dict["percent"]) : 100
+        let left = min(100, max(0, 100 - used))
+
+        var rst = ""
+        var reset: Date? = nil
+        if let iso = dict["resetsAt"] as? String, let date = parseISO(iso) {
+            reset = date
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MM-dd HH:mm"
+            formatter.timeZone = TimeZone.current
+            rst = formatter.string(from: date)
+        }
+        return (left, rst, reset)
+    }
+
+    /// resetsAt 形如 "2026-10-10T11:18:08.000Z":带毫秒,.withFractionalSeconds 才解析得出
+    private static func parseISO(_ s: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: s)
+    }
+}
+
 // MARK: - 团队看板(DeepSeek)
 
 /// 团队看板口径常量。改额度/看板地址时,deepseeq-token-money 的 my_usage.html、
@@ -316,4 +398,15 @@ func balanceIconPct(_ balance: Double) -> Double {
     if balance < 10 { return 10 }
     if balance < 50 { return 50 }
     return 100
+}
+
+/// 标题栏 OpenCode 段:只放 5h 与 weekly —— monthly 变化慢,放菜单里够了;
+/// 三个窗口并排会把标题撑得过宽。showGLM=false 时用全称,并排时缩写省宽度,
+/// 与 dsTitleSegment 的 DS/DeepSeek 同一套惯例。
+/// 返回 nil 表示没拉到数据:整段省略,不要显示 "0% 0%" 那种看着像额度用尽的文本。
+func ocTitleSegment(_ state: OCState, showGLM: Bool) -> String? {
+    guard state.ok else { return nil }
+    let label = showGLM ? "OC" : "OpenCode"
+    return "\(label)\(icon(for: state.rollingLeft))\(Int(state.rollingLeft))% "
+        + "\(icon(for: state.weeklyLeft))\(Int(state.weeklyLeft))%"
 }

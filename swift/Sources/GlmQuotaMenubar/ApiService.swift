@@ -5,6 +5,9 @@ import Foundation
 struct ApiService {
     private static let glmBase = "https://open.bigmodel.cn"
     private static let deepseekApi = "https://api.deepseek.com"
+    /// GO 订阅的额度接口;实测 /zen/v1/usage 与 api.opencode.ai 两个变体都是 404,
+    /// 只有这一条带 /go 前缀的可用(2026-10-10 用真实 key 验过)。
+    private static let openCodeApi = "https://opencode.ai/zen/go/v1"
 
     /// GET with an optional Bearer token; returns the parsed top-level JSON dictionary.
     /// 默认 10s;团队看板 force=1 上游慢时要 ~20s,单独放宽(见 fetchTeamUsage)。
@@ -69,6 +72,13 @@ struct ApiService {
             return nil
         }
         return dict
+    }
+
+    /// OpenCode GO 额度 → `usage` 对象(rolling/weekly/monthly)。
+    /// 与 GLM 不同,这个接口没有 {code,success,data} 包装,直接取顶层 usage。
+    static func fetchOpenCodeUsage(token: String) -> [String: Any]? {
+        guard let dict = apiGet(url: "\(openCodeApi)/usage", token: token) else { return nil }
+        return dict["usage"] as? [String: Any]
     }
 
     /// 团队看板按 Key 聚合的用量(局域网明文 HTTP,只读、无需鉴权)。

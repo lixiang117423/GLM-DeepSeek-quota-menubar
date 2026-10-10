@@ -7,7 +7,7 @@ struct SecretsLoader {
             .appendingPathComponent(".config/zsh/ai-secrets.env")
     }()
 
-    /// Returns ["glm": token, "deepseek": token] for any keys found
+    /// Returns ["glm": token, "deepseek": token, "opencode": token] for any keys found
     static func load() -> [String: String] {
         var tokens: [String: String] = [:]
         guard let content = try? String(contentsOf: secretsFile, encoding: .utf8) else {
@@ -30,6 +30,8 @@ struct SecretsLoader {
                 tokens["glm"] = value
             } else if key == "ANTHROPIC_AUTH_TOKEN_DEEPSEEK" {
                 tokens["deepseek"] = value
+            } else if key == "OPENCODE_API_KEY" {
+                tokens["opencode"] = value
             }
         }
         return tokens

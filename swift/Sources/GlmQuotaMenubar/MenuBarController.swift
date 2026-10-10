@@ -15,11 +15,15 @@ class MenuBarController {
     private var secrets: [String: String] = [:]
     private var glmState = GLMState()
     private var dsState = DSState()
+    private var ocState = OCState()
     private var teamState: TeamState?  // 团队看板数据;nil=还没拉过
     private var updatedAt: Date?
     private var fetchFailed = false
     /// GLM 展示开关,菜单里可切。2026-09 起主用 DeepSeek,后续可能弃用 GLM。
     private var showGLM: Bool
+    /// OpenCode 展示开关,菜单里可切。与 GLM 开关不同,关掉只是不渲染,
+    /// 数据照常每轮拉(同 「标题栏显示团队数据」,切换无需重拉)。
+    private var showOC: Bool
     /// 标题栏 DeepSeek 段的口径:团队(今日费用+剩余)或个人余额。默认团队。
     private var showDSTeam: Bool
     /// 本轮 GLM 拉取是否失败(接口 200 + 业务错误码也算)。失败时菜单里显示原因,
@@ -30,6 +34,7 @@ class MenuBarController {
         self.refreshAction = refreshAction
         self.showGLM = UserDefaults.standard.object(forKey: "show_glm") as? Bool ?? true
         self.showDSTeam = UserDefaults.standard.object(forKey: "show_ds_team") as? Bool ?? true
+        self.showOC = UserDefaults.standard.object(forKey: "show_oc") as? Bool ?? true
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "AI"
         reloadSecrets()
@@ -45,9 +50,10 @@ class MenuBarController {
 
     /// Apply fetched data to the UI. `glm`/`team` 为 nil 表示本轮没拉
     /// (GLM 开关关闭或额度耗尽暂停),保留旧值。
-    func applyFetch(glm: GLMState?, ds: DSState, team: TeamState?, failed: Bool, glmFailed: Bool) {
+    func applyFetch(glm: GLMState?, ds: DSState, oc: OCState, team: TeamState?, failed: Bool, glmFailed: Bool) {
         if let glm { glmState = glm }
         dsState = ds
+        ocState = oc
         if let team { teamState = team }
         fetchFailed = failed
         self.glmFailed = glmFailed
@@ -72,8 +78,9 @@ class MenuBarController {
         let menu = NSMenu()
         let hasGLM = secrets["glm"] != nil
         let hasDS = secrets["deepseek"] != nil
+        let hasOC = secrets["opencode"] != nil
 
-        if !hasGLM && !hasDS {
+        if !hasGLM && !hasDS && !hasOC {
             statusItem.button?.title = "AI"
             menu.addItem(infoItem("⚠️ 未读取到 API token"))
             menu.addItem(infoItem("  请配置 \(SecretsLoader.secretsFilePath)"))
@@ -91,6 +98,10 @@ class MenuBarController {
                 part += " \(icon(for: glmState.qWeekly))\(Int(glmState.qWeekly))%"
             }
             parts.append(part)
+        }
+        // OpenCode 段:5h + weekly(monthly 在菜单里);格式细节见 ocTitleSegment
+        if showOC, let seg = ocTitleSegment(ocState, showGLM: showGLM) {
+            parts.append(seg)
         }
         // DS 段:团队(今日费用+剩余)或个人余额,菜单里可切;格式细节见 dsTitleSegment
         if let seg = dsTitleSegment(team: teamState, ds: dsState, showTeam: showDSTeam, showGLM: showGLM) {
@@ -138,6 +149,23 @@ class MenuBarController {
             }
         }
 
+        // -- OpenCode GO section --
+        if hasOC {
+            menu.addItem(.separator())
+            if ocState.ok {
+                menu.addItem(infoItem("📡 OpenCode GO"))
+                addOCWindow(to: menu, label: "5h", left: ocState.rollingLeft,
+                            usd: ocState.rollingUSD, cap: OCState.cap5h, rst: ocState.rRolling)
+                addOCWindow(to: menu, label: "Weekly", left: ocState.weeklyLeft,
+                            usd: ocState.weeklyUSD, cap: OCState.capWeekly, rst: ocState.rWeekly)
+                addOCWindow(to: menu, label: "Monthly", left: ocState.monthlyLeft,
+                            usd: ocState.monthlyUSD, cap: OCState.capMonthly, rst: ocState.rMonthly)
+            } else {
+                // 401/403 与解析失败都落到这里;不给原因区分,免得把"接口改版"误报成"密钥过期"
+                menu.addItem(infoItem("📡 OpenCode GO  ⚠️ 无数据(密钥无效或无 GO 权限)"))
+            }
+        }
+
         // -- DeepSeek section --
         addTeamSection(to: menu)
         menu.addItem(.separator())
@@ -173,6 +201,17 @@ class MenuBarController {
         }
     }
 
+    /// 一个 OpenCode 额度窗口:剩余百分比 + 换算出的美元余额 + 重置时间。
+    /// 金额不是接口给的,是拿套餐上限乘出来的(接口只回百分比,见 OCState)。
+    private func addOCWindow(to menu: NSMenu, label: String, left: Double,
+                             usd: Double, cap: Double, rst: String) {
+        menu.addItem(infoItem("  \(icon(for: left)) \(label): left \(Int(left))%"
+            + "  ($\(fmtMoney(usd, decimals: 2)) of $\(fmtMoney(cap)))"))
+        if !rst.isEmpty {
+            menu.addItem(infoItem("        resets: \(rst)"))
+        }
+    }
+
     /// yyyy-MM-dd → MM-dd
     private func mmdd(_ date: String) -> String {
         return TeamState.shortDate(date)
@@ -199,6 +238,10 @@ class MenuBarController {
         glmToggle.target = self
         glmToggle.state = showGLM ? .on : .off
         menu.addItem(glmToggle)
+        let ocToggle = NSMenuItem(title: "显示 OpenCode", action: #selector(onToggleOC(_:)), keyEquivalent: "")
+        ocToggle.target = self
+        ocToggle.state = showOC ? .on : .off
+        menu.addItem(ocToggle)
         let dsToggle = NSMenuItem(title: "标题栏显示团队数据", action: #selector(onToggleDSTeam(_:)), keyEquivalent: "")
         dsToggle.target = self
         dsToggle.state = showDSTeam ? .on : .off
@@ -252,6 +295,13 @@ class MenuBarController {
         showDSTeam.toggle()
         UserDefaults.standard.set(showDSTeam, forKey: "show_ds_team")
         // 两份数据每轮都在拉,切换纯渲染即可,不重拉
+        rebuildMenu()
+    }
+
+    @objc private func onToggleOC(_ sender: Any?) {
+        showOC.toggle()
+        UserDefaults.standard.set(showOC, forKey: "show_oc")
+        // 同「标题栏显示团队数据」:数据每轮都在拉,切换纯渲染即可
         rebuildMenu()
     }
 

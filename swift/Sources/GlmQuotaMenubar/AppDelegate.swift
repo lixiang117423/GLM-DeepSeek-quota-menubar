@@ -46,10 +46,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let secrets = SecretsLoader.load()
         let glmToken = secrets["glm"]
         let dsToken = secrets["deepseek"]
+        let ocToken = secrets["opencode"]
 
         var glmNew: GLMState?
         var glmFailed = false
         var dsNew = DSState()
+        var ocNew = OCState()
         var teamNew: TeamState?
         var failed = false
 
@@ -77,6 +79,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // OpenCode GO:三个窗口变化慢,一轮一次调用,不做 GLM 那种耗尽暂停
+        if let ocToken {
+            let usage = ApiService.fetchOpenCodeUsage(token: ocToken)
+            if usage == nil {
+                failed = true
+                // 401/403 也走这里:菜单显 ⚠️ 而不是让整段凭空消失
+                print("[OC] 拉取失败:密钥无效、无 GO 权限或网络错误", to: &stderr)
+            } else {
+                ocNew = OCState.fromApi(data: usage)
+                print("[OC] 5h 剩 \(Int(ocNew.rollingLeft))% · weekly 剩 \(Int(ocNew.weeklyLeft))% · monthly 剩 \(Int(ocNew.monthlyLeft))%", to: &stderr)
+            }
+        }
+
         let team = fetchTeamState()
         logTeam(team)
         teamNew = team
@@ -85,7 +100,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if seq != fetchSeq { return }
 
         DispatchQueue.main.async { [weak self] in
-            self?.menuBarController.applyFetch(glm: glmNew, ds: dsNew, team: teamNew, failed: failed, glmFailed: glmFailed)
+            self?.menuBarController.applyFetch(glm: glmNew, ds: dsNew, oc: ocNew, team: teamNew, failed: failed, glmFailed: glmFailed)
         }
     }
 

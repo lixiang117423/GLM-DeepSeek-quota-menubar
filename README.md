@@ -1,5 +1,16 @@
 # AI Quota MenuBar
 
+> [!IMPORTANT]
+> **本仓库已停止维护(2026-10-11),不推荐新装。**
+>
+> 功能已被 [Pulse](https://github.com/qunqin24/Pulse) 取代 —— 一个支持 77 个服务的
+> macOS 用量监控,原生覆盖本项目做过的全部渠道:**DeepSeek**、**OpenCode GO**、
+> **Zhipu(GLM)**。公司团队看板通过自建 Pulse 扩展接入(本地仓库 `pulse-team-quota`,
+> 不在 GitHub 上)。
+>
+> 代码保留作参考与回退:launchd 自启已注销,`make install` 可随时恢复。
+> 下文是停止维护时的原样说明,未再更新。
+
 macOS 菜单栏小工具,实时查看 **GLM(智谱)** 与 **DeepSeek** 的用量和余额。
 原生 **Swift + AppKit** 实现,零第三方依赖。
 

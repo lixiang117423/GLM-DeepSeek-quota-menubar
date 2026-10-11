@@ -2,7 +2,11 @@
 
 BINARY := .build/glm-quota-menubar
 SOURCES := $(wildcard Sources/GlmQuotaMenubar/*.swift)
-PLIST_NAME := com.lixiang.glm-quota-menubar.plist
+# bootout 要的是服务名(不带 .plist),bootstrap 要的是 plist 路径 —— 两者混用会静默失败:
+# 带 .plist 的 bootout 报 "No such process",被 2>/dev/null || true 吞掉,
+# 于是 job 一直挂着,重复 install 时 bootstrap 撞上 "service already loaded"。
+LABEL := com.lixiang.glm-quota-menubar
+PLIST_NAME := $(LABEL).plist
 PLIST_DST := $(HOME)/Library/LaunchAgents/$(PLIST_NAME)
 
 build: $(BINARY)
@@ -21,14 +25,14 @@ install: build
 	sed -e "s|__BINARY__|$(shell pwd)/$(BINARY)|g" \
 	    -e "s|__LOG__|/tmp/glm-quota-menubar.log|g" \
 	    $(PLIST_NAME) > $(PLIST_DST)
-	launchctl bootout gui/$(shell id -u)/$(PLIST_NAME) 2>/dev/null || true
+	launchctl bootout gui/$(shell id -u)/$(LABEL) 2>/dev/null || true
 	launchctl bootstrap gui/$(shell id -u) $(PLIST_DST)
 	@echo "✅ Installed launchd auto-start"
 	@echo "   binary: $(shell pwd)/$(BINARY)"
 	launchctl list | grep glm-quota-menubar || true
 
 uninstall:
-	launchctl bootout gui/$(shell id -u)/$(PLIST_NAME) 2>/dev/null || true
+	launchctl bootout gui/$(shell id -u)/$(LABEL) 2>/dev/null || true
 	rm -f $(PLIST_DST)
 	@echo "✅ Removed launchd auto-start"
 
